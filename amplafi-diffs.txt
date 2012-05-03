@@ -1,0 +1,2040 @@
+Index: core/src/main/java/org/hibernate/cfg/Configuration.java
+===================================================================
+--- core/src/main/java/org/hibernate/cfg/Configuration.java	(revision 18914)
++++ core/src/main/java/org/hibernate/cfg/Configuration.java	(working copy)
+@@ -129,6 +129,8 @@
+ import org.hibernate.mapping.MappedSuperclass;
+ import org.hibernate.proxy.EntityNotFoundDelegate;
+ import org.hibernate.secure.JACCConfiguration;
++import org.hibernate.stat.StatisticsFactory;
++import org.hibernate.stat.simple.DefaultStatisticsFactory;
+ import org.hibernate.tool.hbm2ddl.DatabaseMetadata;
+ import org.hibernate.tool.hbm2ddl.TableMetadata;
+ import org.hibernate.tool.hbm2ddl.IndexMetadata;
+@@ -188,25 +190,26 @@
+ 
+ 	protected Map sqlFunctions;
+ 
+-	private EntityTuplizerFactory entityTuplizerFactory;
++	private transient EntityTuplizerFactory entityTuplizerFactory;
+ //	private ComponentTuplizerFactory componentTuplizerFactory; todo : HHH-3517 and HHH-1907
+ 
+-	private Interceptor interceptor;
++	private transient Interceptor interceptor;
+ 	private Properties properties;
+-	private EntityResolver entityResolver;
+-	private EntityNotFoundDelegate entityNotFoundDelegate;
++	private transient EntityResolver entityResolver;
++	private transient EntityNotFoundDelegate entityNotFoundDelegate;
++	private transient StatisticsFactory statisticsFactory;
+ 
+-	protected transient XMLHelper xmlHelper;
+-	protected NamingStrategy namingStrategy;
+-	private SessionFactoryObserver sessionFactoryObserver;
++	private transient XMLHelper xmlHelper;
++	protected transient NamingStrategy namingStrategy;
++	private transient SessionFactoryObserver sessionFactoryObserver;
+ 
+-	private EventListeners eventListeners;
++	private transient EventListeners eventListeners;
+ 
+ 	protected final SettingsFactory settingsFactory;
+ 
+ 	private transient Mapping mapping = buildMapping();
+ 
+-	private DefaultIdentifierGeneratorFactory identifierGeneratorFactory;
++	private transient IdentifierGeneratorFactory identifierGeneratorFactory;
+ 
+ 	//Map<Class<?>, org.hibernate.mapping.MappedSuperclass>
+ 	private Map mappedSuperclasses;
+@@ -247,7 +250,7 @@
+ 		xmlHelper = new XMLHelper();
+ 		interceptor = EmptyInterceptor.INSTANCE;
+ 		properties = Environment.getProperties();
+-		entityResolver = XMLHelper.DEFAULT_DTD_RESOLVER;
++		setEntityResolver(XMLHelper.DEFAULT_DTD_RESOLVER);
+ 		eventListeners = new EventListeners();
+ 
+ 		sqlFunctions = new HashMap();
+@@ -256,11 +259,15 @@
+ //		componentTuplizerFactory = new ComponentTuplizerFactory();
+ 
+ 		identifierGeneratorFactory = new DefaultIdentifierGeneratorFactory();
++		statisticsFactory = new DefaultStatisticsFactory();
+ 
+ 		mappedSuperclasses = new HashMap();
+ 	}
+ 
+ 	public EntityTuplizerFactory getEntityTuplizerFactory() {
++		if ( entityTuplizerFactory == null ) {
++			entityTuplizerFactory = new EntityTuplizerFactory();
++		}
+ 		return entityTuplizerFactory;
+ 	}
+ 
+@@ -336,7 +343,13 @@
+ 		this.entityResolver = entityResolver;
+ 	}
+ 
++	/**
++	 * @return the entityResolver
++	 */
+ 	public EntityResolver getEntityResolver() {
++		if (entityResolver == null ) {
++			entityResolver = XMLHelper.DEFAULT_DTD_RESOLVER;
++		}
+ 		return entityResolver;
+ 	}
+ 
+@@ -389,7 +402,7 @@
+ 		}
+ 		try {
+ 			List errors = new ArrayList();
+-			org.dom4j.Document doc = xmlHelper.createSAXReader( xmlFile.toString(), errors, entityResolver ).read( xmlFile );
++			org.dom4j.Document doc = getXmlHelper().createSAXReader( xmlFile.toString(), errors, getEntityResolver() ).read( xmlFile );
+ 			if ( errors.size() != 0 ) {
+ 				throw new InvalidMappingException( "file", xmlFile.toString(), ( Throwable ) errors.get( 0 ) );
+ 			}
+@@ -443,7 +456,7 @@
+ 		log.info( "Reading mappings from file: " + xmlFile );
+ 		List errors = new ArrayList();
+ 		try {
+-			org.dom4j.Document doc = xmlHelper.createSAXReader( xmlFile.getAbsolutePath(), errors, entityResolver ).read( xmlFile );
++			org.dom4j.Document doc = getXmlHelper().createSAXReader( xmlFile.getAbsolutePath(), errors, entityResolver ).read( xmlFile );
+ 			if ( errors.size() != 0 ) {
+ 				throw new InvalidMappingException( "file", xmlFile.toString(), (Throwable) errors.get(0) );
+ 			}
+@@ -534,7 +547,7 @@
+ 		}
+ 		try {
+ 			List errors = new ArrayList();
+-			org.dom4j.Document doc = xmlHelper.createSAXReader( "XML String", errors, entityResolver )
++			org.dom4j.Document doc = getXmlHelper().createSAXReader( "XML String", errors, getEntityResolver() )
+ 					.read( new StringReader( xml ) );
+ 			if ( errors.size() != 0 ) {
+ 				throw new MappingException( "invalid mapping", (Throwable) errors.get( 0 ) );
+@@ -583,7 +596,7 @@
+ 		if ( log.isDebugEnabled() ) {
+ 			log.debug( "Mapping document:\n" + doc );
+ 		}
+-		add( xmlHelper.createDOMReader().read( doc ) );
++		add( getXmlHelper().createDOMReader().read( doc ) );
+ 		return this;
+ 	}
+ 
+@@ -598,7 +611,7 @@
+ 	public Configuration addInputStream(InputStream xmlInputStream) throws MappingException {
+ 		try {
+ 			List errors = new ArrayList();
+-			org.dom4j.Document doc = xmlHelper.createSAXReader( "XML InputStream", errors, entityResolver )
++			org.dom4j.Document doc = getXmlHelper().createSAXReader( "XML InputStream", errors, getEntityResolver() )
+ 					.read( new InputSource( xmlInputStream ) );
+ 			if ( errors.size() != 0 ) {
+ 				throw new InvalidMappingException( "invalid mapping", null, (Throwable) errors.get( 0 ) );
+@@ -1387,12 +1400,13 @@
+ 				mapping,
+ 				settings,
+ 				getInitializedEventListeners(),
+-				sessionFactoryObserver
++				sessionFactoryObserver,
++				getStatisticsFactory()
+ 			);
+ 	}
+ 
+ 	private EventListeners getInitializedEventListeners() {
+-		EventListeners result = (EventListeners) eventListeners.shallowCopy();
++		EventListeners result = (EventListeners) getEventListeners().shallowCopy();
+ 		result.initializeListeners( this );
+ 		return result;
+ 	}
+@@ -1401,6 +1415,9 @@
+ 	 * Return the configured <tt>Interceptor</tt>
+ 	 */
+ 	public Interceptor getInterceptor() {
++		if ( interceptor == null ) {
++			interceptor = EmptyInterceptor.INSTANCE;
++		}
+ 		return interceptor;
+ 	}
+ 
+@@ -1573,7 +1590,7 @@
+ 		org.dom4j.Document doc;
+ 		try {
+ 			List errors = new ArrayList();
+-			doc = xmlHelper.createSAXReader( resourceName, errors, entityResolver )
++			doc = getXmlHelper().createSAXReader( resourceName, errors, getEntityResolver() )
+ 					.read( new InputSource( stream ) );
+ 			if ( errors.size() != 0 ) {
+ 				throw new MappingException(
+@@ -1612,7 +1629,7 @@
+ 	 */
+ 	public Configuration configure(Document document) throws HibernateException {
+ 		log.info( "configuring from XML document" );
+-		return doConfigure( xmlHelper.createDOMReader().read( document ) );
++		return doConfigure( getXmlHelper().createDOMReader().read( document ) );
+ 	}
+ 
+ 	protected Configuration doConfigure(org.dom4j.Document doc) throws HibernateException {
+@@ -1757,7 +1774,7 @@
+ 	public void setListeners(String type, String[] listenerClasses) {
+ 		Object[] listeners = null;
+ 		if ( listenerClasses != null ) {
+-			listeners = (Object[]) Array.newInstance( eventListeners.getListenerClassFor(type), listenerClasses.length );
++			listeners = (Object[]) Array.newInstance( getEventListeners().getListenerClassFor(type), listenerClasses.length );
+ 			for ( int i = 0; i < listeners.length ; i++ ) {
+ 				try {
+ 					listeners[i] = ReflectHelper.classForName( listenerClasses[i] ).newInstance();
+@@ -1776,7 +1793,7 @@
+ 	public void setListener(String type, Object listener) {
+ 		Object[] listeners = null;
+ 		if ( listener != null ) {
+-			listeners = (Object[]) Array.newInstance( eventListeners.getListenerClassFor(type), 1 );
++			listeners = (Object[]) Array.newInstance( getEventListeners().getListenerClassFor(type), 1 );
+ 			listeners[0] = listener;
+ 		}
+ 		setListeners( type, listeners );
+@@ -1785,284 +1802,284 @@
+ 	public void setListeners(String type, Object[] listeners) {
+ 		if ( "auto-flush".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setAutoFlushEventListeners( new AutoFlushEventListener[]{} );
++				getEventListeners().setAutoFlushEventListeners( new AutoFlushEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setAutoFlushEventListeners( (AutoFlushEventListener[]) listeners );
++				getEventListeners().setAutoFlushEventListeners( (AutoFlushEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "merge".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setMergeEventListeners( new MergeEventListener[]{} );
++				getEventListeners().setMergeEventListeners( new MergeEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setMergeEventListeners( (MergeEventListener[]) listeners );
++				getEventListeners().setMergeEventListeners( (MergeEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "create".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPersistEventListeners( new PersistEventListener[]{} );
++				getEventListeners().setPersistEventListeners( new PersistEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setPersistEventListeners( (PersistEventListener[]) listeners );
++				getEventListeners().setPersistEventListeners( (PersistEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "create-onflush".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPersistOnFlushEventListeners( new PersistEventListener[]{} );
++				getEventListeners().setPersistOnFlushEventListeners( new PersistEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setPersistOnFlushEventListeners( (PersistEventListener[]) listeners );
++				getEventListeners().setPersistOnFlushEventListeners( (PersistEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "delete".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setDeleteEventListeners( new DeleteEventListener[]{} );
++				getEventListeners().setDeleteEventListeners( new DeleteEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setDeleteEventListeners( (DeleteEventListener[]) listeners );
++				getEventListeners().setDeleteEventListeners( (DeleteEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "dirty-check".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setDirtyCheckEventListeners( new DirtyCheckEventListener[]{} );
++				getEventListeners().setDirtyCheckEventListeners( new DirtyCheckEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setDirtyCheckEventListeners( (DirtyCheckEventListener[]) listeners );
++				getEventListeners().setDirtyCheckEventListeners( (DirtyCheckEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "evict".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setEvictEventListeners( new EvictEventListener[]{} );
++				getEventListeners().setEvictEventListeners( new EvictEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setEvictEventListeners( (EvictEventListener[]) listeners );
++				getEventListeners().setEvictEventListeners( (EvictEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "flush".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setFlushEventListeners( new FlushEventListener[]{} );
++				getEventListeners().setFlushEventListeners( new FlushEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setFlushEventListeners( (FlushEventListener[]) listeners );
++				getEventListeners().setFlushEventListeners( (FlushEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "flush-entity".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setFlushEntityEventListeners( new FlushEntityEventListener[]{} );
++				getEventListeners().setFlushEntityEventListeners( new FlushEntityEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setFlushEntityEventListeners( (FlushEntityEventListener[]) listeners );
++				getEventListeners().setFlushEntityEventListeners( (FlushEntityEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "load".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setLoadEventListeners( new LoadEventListener[]{} );
++				getEventListeners().setLoadEventListeners( new LoadEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setLoadEventListeners( (LoadEventListener[]) listeners );
++				getEventListeners().setLoadEventListeners( (LoadEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "load-collection".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setInitializeCollectionEventListeners(
++				getEventListeners().setInitializeCollectionEventListeners(
+ 						new InitializeCollectionEventListener[]{}
+ 					);
+ 			}
+ 			else {
+-				eventListeners.setInitializeCollectionEventListeners(
++				getEventListeners().setInitializeCollectionEventListeners(
+ 						(InitializeCollectionEventListener[]) listeners
+ 					);
+ 			}
+ 		}
+ 		else if ( "lock".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setLockEventListeners( new LockEventListener[]{} );
++				getEventListeners().setLockEventListeners( new LockEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setLockEventListeners( (LockEventListener[]) listeners );
++				getEventListeners().setLockEventListeners( (LockEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "refresh".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setRefreshEventListeners( new RefreshEventListener[]{} );
++				getEventListeners().setRefreshEventListeners( new RefreshEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setRefreshEventListeners( (RefreshEventListener[]) listeners );
++				getEventListeners().setRefreshEventListeners( (RefreshEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "replicate".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setReplicateEventListeners( new ReplicateEventListener[]{} );
++				getEventListeners().setReplicateEventListeners( new ReplicateEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setReplicateEventListeners( (ReplicateEventListener[]) listeners );
++				getEventListeners().setReplicateEventListeners( (ReplicateEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "save-update".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setSaveOrUpdateEventListeners( new SaveOrUpdateEventListener[]{} );
++				getEventListeners().setSaveOrUpdateEventListeners( new SaveOrUpdateEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setSaveOrUpdateEventListeners( (SaveOrUpdateEventListener[]) listeners );
++				getEventListeners().setSaveOrUpdateEventListeners( (SaveOrUpdateEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "save".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setSaveEventListeners( new SaveOrUpdateEventListener[]{} );
++				getEventListeners().setSaveEventListeners( new SaveOrUpdateEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setSaveEventListeners( (SaveOrUpdateEventListener[]) listeners );
++				getEventListeners().setSaveEventListeners( (SaveOrUpdateEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "update".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setUpdateEventListeners( new SaveOrUpdateEventListener[]{} );
++				getEventListeners().setUpdateEventListeners( new SaveOrUpdateEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setUpdateEventListeners( (SaveOrUpdateEventListener[]) listeners );
++				getEventListeners().setUpdateEventListeners( (SaveOrUpdateEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "pre-load".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPreLoadEventListeners( new PreLoadEventListener[]{} );
++				getEventListeners().setPreLoadEventListeners( new PreLoadEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setPreLoadEventListeners( (PreLoadEventListener[]) listeners );
++				getEventListeners().setPreLoadEventListeners( (PreLoadEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "pre-update".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPreUpdateEventListeners( new PreUpdateEventListener[]{} );
++				getEventListeners().setPreUpdateEventListeners( new PreUpdateEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setPreUpdateEventListeners( (PreUpdateEventListener[]) listeners );
++				getEventListeners().setPreUpdateEventListeners( (PreUpdateEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "pre-delete".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPreDeleteEventListeners( new PreDeleteEventListener[]{} );
++				getEventListeners().setPreDeleteEventListeners( new PreDeleteEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setPreDeleteEventListeners( (PreDeleteEventListener[]) listeners );
++				getEventListeners().setPreDeleteEventListeners( (PreDeleteEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "pre-insert".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPreInsertEventListeners( new PreInsertEventListener[]{} );
++				getEventListeners().setPreInsertEventListeners( new PreInsertEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setPreInsertEventListeners( (PreInsertEventListener[]) listeners );
++				getEventListeners().setPreInsertEventListeners( (PreInsertEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "pre-collection-recreate".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPreCollectionRecreateEventListeners( new PreCollectionRecreateEventListener[]{} );
++				getEventListeners().setPreCollectionRecreateEventListeners( new PreCollectionRecreateEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setPreCollectionRecreateEventListeners( (PreCollectionRecreateEventListener[]) listeners );
++				getEventListeners().setPreCollectionRecreateEventListeners( (PreCollectionRecreateEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "pre-collection-remove".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPreCollectionRemoveEventListeners( new PreCollectionRemoveEventListener[]{} );
++				getEventListeners().setPreCollectionRemoveEventListeners( new PreCollectionRemoveEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setPreCollectionRemoveEventListeners( ( PreCollectionRemoveEventListener[]) listeners );
++				getEventListeners().setPreCollectionRemoveEventListeners( ( PreCollectionRemoveEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "pre-collection-update".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPreCollectionUpdateEventListeners( new PreCollectionUpdateEventListener[]{} );
++				getEventListeners().setPreCollectionUpdateEventListeners( new PreCollectionUpdateEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setPreCollectionUpdateEventListeners( ( PreCollectionUpdateEventListener[]) listeners );
++				getEventListeners().setPreCollectionUpdateEventListeners( ( PreCollectionUpdateEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "post-load".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPostLoadEventListeners( new PostLoadEventListener[]{} );
++				getEventListeners().setPostLoadEventListeners( new PostLoadEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setPostLoadEventListeners( (PostLoadEventListener[]) listeners );
++				getEventListeners().setPostLoadEventListeners( (PostLoadEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "post-update".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPostUpdateEventListeners( new PostUpdateEventListener[]{} );
++				getEventListeners().setPostUpdateEventListeners( new PostUpdateEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setPostUpdateEventListeners( (PostUpdateEventListener[]) listeners );
++				getEventListeners().setPostUpdateEventListeners( (PostUpdateEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "post-delete".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPostDeleteEventListeners( new PostDeleteEventListener[]{} );
++				getEventListeners().setPostDeleteEventListeners( new PostDeleteEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setPostDeleteEventListeners( (PostDeleteEventListener[]) listeners );
++				getEventListeners().setPostDeleteEventListeners( (PostDeleteEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "post-insert".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPostInsertEventListeners( new PostInsertEventListener[]{} );
++				getEventListeners().setPostInsertEventListeners( new PostInsertEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setPostInsertEventListeners( (PostInsertEventListener[]) listeners );
++				getEventListeners().setPostInsertEventListeners( (PostInsertEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "post-commit-update".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPostCommitUpdateEventListeners(
++				getEventListeners().setPostCommitUpdateEventListeners(
+ 						new PostUpdateEventListener[]{}
+ 					);
+ 			}
+ 			else {
+-				eventListeners.setPostCommitUpdateEventListeners( (PostUpdateEventListener[]) listeners );
++				getEventListeners().setPostCommitUpdateEventListeners( (PostUpdateEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "post-commit-delete".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPostCommitDeleteEventListeners(
++				getEventListeners().setPostCommitDeleteEventListeners(
+ 						new PostDeleteEventListener[]{}
+ 					);
+ 			}
+ 			else {
+-				eventListeners.setPostCommitDeleteEventListeners( (PostDeleteEventListener[]) listeners );
++				getEventListeners().setPostCommitDeleteEventListeners( (PostDeleteEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "post-commit-insert".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPostCommitInsertEventListeners(
++				getEventListeners().setPostCommitInsertEventListeners(
+ 						new PostInsertEventListener[]{}
+ 				);
+ 			}
+ 			else {
+-				eventListeners.setPostCommitInsertEventListeners( (PostInsertEventListener[]) listeners );
++				getEventListeners().setPostCommitInsertEventListeners( (PostInsertEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "post-collection-recreate".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPostCollectionRecreateEventListeners( new PostCollectionRecreateEventListener[]{} );
++				getEventListeners().setPostCollectionRecreateEventListeners( new PostCollectionRecreateEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setPostCollectionRecreateEventListeners( (PostCollectionRecreateEventListener[]) listeners );
++				getEventListeners().setPostCollectionRecreateEventListeners( (PostCollectionRecreateEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "post-collection-remove".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPostCollectionRemoveEventListeners( new PostCollectionRemoveEventListener[]{} );
++				getEventListeners().setPostCollectionRemoveEventListeners( new PostCollectionRemoveEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setPostCollectionRemoveEventListeners( ( PostCollectionRemoveEventListener[]) listeners );
++				getEventListeners().setPostCollectionRemoveEventListeners( ( PostCollectionRemoveEventListener[]) listeners );
+ 			}
+ 		}
+ 		else if ( "post-collection-update".equals( type ) ) {
+ 			if ( listeners == null ) {
+-				eventListeners.setPostCollectionUpdateEventListeners( new PostCollectionUpdateEventListener[]{} );
++				getEventListeners().setPostCollectionUpdateEventListeners( new PostCollectionUpdateEventListener[]{} );
+ 			}
+ 			else {
+-				eventListeners.setPostCollectionUpdateEventListeners( ( PostCollectionUpdateEventListener[]) listeners );
++				getEventListeners().setPostCollectionUpdateEventListeners( ( PostCollectionUpdateEventListener[]) listeners );
+ 			}
+ 		}
+ 		else {
+@@ -2071,9 +2088,13 @@
+ 	}
+ 
+ 	public EventListeners getEventListeners() {
++		if ( eventListeners == null ) {
++			eventListeners = new EventListeners();
++		}
+ 		return eventListeners;
+ 	}
+ 
++	
+ 	RootClass getRootClassMapping(String clazz) throws MappingException {
+ 		try {
+ 			return (RootClass) getClassMapping( clazz );
+@@ -2178,6 +2199,9 @@
+ 	 * @return the NamingStrategy.
+ 	 */
+ 	public NamingStrategy getNamingStrategy() {
++		if ( namingStrategy == null ) {
++			namingStrategy = DefaultNamingStrategy.INSTANCE;
++		}
+ 		return namingStrategy;
+ 	}
+ 
+@@ -2196,14 +2220,17 @@
+ 	 *
+ 	 * @return This configuration's IdentifierGeneratorFactory.
+ 	 */
+-	public DefaultIdentifierGeneratorFactory getIdentifierGeneratorFactory() {
++	public IdentifierGeneratorFactory getIdentifierGeneratorFactory() {
++		if ( identifierGeneratorFactory == null ) {
++			identifierGeneratorFactory = new DefaultIdentifierGeneratorFactory();
++		}
+ 		return identifierGeneratorFactory;
+ 	}
+ 
+ 	public Mapping buildMapping() {
+ 		return new Mapping() {
+ 			public IdentifierGeneratorFactory getIdentifierGeneratorFactory() {
+-				return identifierGeneratorFactory;
++				return Configuration.this.getIdentifierGeneratorFactory();
+ 			}
+ 
+ 			/**
+@@ -2248,7 +2275,6 @@
+ 	private void readObject(ObjectInputStream ois) throws IOException, ClassNotFoundException {
+ 		ois.defaultReadObject();
+ 		this.mapping = buildMapping();
+-		xmlHelper = new XMLHelper();
+ 	}
+ 
+ 	public Map getFilterDefinitions() {
+@@ -2287,10 +2313,44 @@
+ 		this.sessionFactoryObserver = sessionFactoryObserver;
+ 	}
+ 
++	/**
++	 * @param statisticsFactory the statisticsFactory to set
++	 */
++	public void setStatisticsFactory(StatisticsFactory statisticsFactory) {
++		this.statisticsFactory = statisticsFactory;
++	}
+ 
++	/**
++	 * @return the statisticsFactory
++	 */
++	public StatisticsFactory getStatisticsFactory() {
++		if ( this.statisticsFactory == null ) {
++			this.statisticsFactory = new DefaultStatisticsFactory();
++		}
++		return statisticsFactory;
++	}
++
++
+ 	// Mappings impl ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 
+ 	/**
++	 * @param xmlHelper the xmlHelper to set
++	 */
++	protected void setXmlHelper(XMLHelper xmlHelper) {
++		this.xmlHelper = xmlHelper;
++	}
++
++	/**
++	 * @return the xmlHelper
++	 */
++	protected XMLHelper getXmlHelper() {
++		if ( xmlHelper == null ) {
++			xmlHelper = new XMLHelper();
++		}
++		return xmlHelper;
++	}
++
++	/**
+ 	 * Internal implementation of the Mappings interface giving access to the Configuration's internal
+ 	 * <tt>metadata repository</tt> state ({@link Configuration#classes}, {@link Configuration#tables}, etc).
+ 	 */
+@@ -2374,11 +2434,11 @@
+ 
+ 
+ 		public NamingStrategy getNamingStrategy() {
+-			return namingStrategy;
++			return Configuration.this.getNamingStrategy();
+ 		}
+ 
+ 		public void setNamingStrategy(NamingStrategy namingStrategy) {
+-			Configuration.this.namingStrategy = namingStrategy;
++			Configuration.this.setNamingStrategy(namingStrategy);
+ 		}
+ 
+ 
+@@ -2786,8 +2846,8 @@
+ 			extendsQueue.put( entry, null );
+ 		}
+ 
+-		public DefaultIdentifierGeneratorFactory getIdentifierGeneratorFactory() {
+-			return identifierGeneratorFactory;
++		public IdentifierGeneratorFactory getIdentifierGeneratorFactory() {
++			return Configuration.this.getIdentifierGeneratorFactory();
+ 		}
+ 
+ 		public void addMappedSuperclass(Class type, MappedSuperclass mappedSuperclass) {
+Index: core/src/main/java/org/hibernate/cfg/Mappings.java
+===================================================================
+--- core/src/main/java/org/hibernate/cfg/Mappings.java	(revision 18914)
++++ core/src/main/java/org/hibernate/cfg/Mappings.java	(working copy)
+@@ -32,7 +32,7 @@
+ 
+ import org.hibernate.DuplicateMappingException;
+ import org.hibernate.MappingException;
+-import org.hibernate.id.factory.DefaultIdentifierGeneratorFactory;
++import org.hibernate.id.factory.IdentifierGeneratorFactory;
+ import org.hibernate.engine.FilterDefinition;
+ import org.hibernate.engine.NamedQueryDefinition;
+ import org.hibernate.engine.NamedSQLQueryDefinition;
+@@ -525,7 +525,7 @@
+ 	 *
+ 	 * @return The IdentifierGeneratorFactory
+ 	 */
+-	public DefaultIdentifierGeneratorFactory getIdentifierGeneratorFactory();
++	public IdentifierGeneratorFactory getIdentifierGeneratorFactory();
+ 
+ 	/**
+ 	 * add a new MappedSuperclass
+Index: core/src/main/java/org/hibernate/engine/query/sql/NativeSQLQueryScalarReturn.java
+===================================================================
+--- core/src/main/java/org/hibernate/engine/query/sql/NativeSQLQueryScalarReturn.java	(revision 18914)
++++ core/src/main/java/org/hibernate/engine/query/sql/NativeSQLQueryScalarReturn.java	(working copy)
+@@ -24,6 +24,8 @@
+  */
+ package org.hibernate.engine.query.sql;
+ 
++import java.io.Serializable;
++
+ import org.hibernate.type.Type;
+ 
+ /**
+@@ -31,7 +33,7 @@
+  *
+  * @author gloegl
+  */
+-public class NativeSQLQueryScalarReturn implements NativeSQLQueryReturn {
++public class NativeSQLQueryScalarReturn implements NativeSQLQueryReturn, Serializable {
+ 	private Type type;
+ 	private String columnAlias;
+ 
+Index: core/src/main/java/org/hibernate/impl/SessionImpl.java
+===================================================================
+--- core/src/main/java/org/hibernate/impl/SessionImpl.java	(revision 18914)
++++ core/src/main/java/org/hibernate/impl/SessionImpl.java	(working copy)
+@@ -129,7 +129,7 @@
+ import org.hibernate.proxy.HibernateProxy;
+ import org.hibernate.proxy.LazyInitializer;
+ import org.hibernate.stat.SessionStatistics;
+-import org.hibernate.stat.SessionStatisticsImpl;
++import org.hibernate.stat.simple.SessionStatisticsImpl;
+ import org.hibernate.type.Type;
+ import org.hibernate.type.SerializationException;
+ import org.hibernate.util.ArrayHelper;
+@@ -1948,7 +1948,7 @@
+ 	
+ 	public SessionStatistics getStatistics() {
+ 		checkTransactionSynchStatus();
+-		return new SessionStatisticsImpl(this);
++		return getFactory().getStatistics().getSessionStatistics(this);
+ 	}
+ 
+ 	public boolean isEventSource() {
+Index: core/src/main/java/org/hibernate/impl/SessionFactoryImpl.java
+===================================================================
+--- core/src/main/java/org/hibernate/impl/SessionFactoryImpl.java	(revision 18914)
++++ core/src/main/java/org/hibernate/impl/SessionFactoryImpl.java	(working copy)
+@@ -112,7 +112,7 @@
+ import org.hibernate.pretty.MessageHelper;
+ import org.hibernate.proxy.EntityNotFoundDelegate;
+ import org.hibernate.stat.Statistics;
+-import org.hibernate.stat.StatisticsImpl;
++import org.hibernate.stat.StatisticsFactory;
+ import org.hibernate.stat.StatisticsImplementor;
+ import org.hibernate.tool.hbm2ddl.SchemaExport;
+ import org.hibernate.tool.hbm2ddl.SchemaUpdate;
+@@ -177,7 +177,7 @@
+ 	private final transient UpdateTimestampsCache updateTimestampsCache;
+ 	private final transient Map queryCaches;
+ 	private final transient Map allCacheRegions = new HashMap();
+-	private final transient StatisticsImpl statistics = new StatisticsImpl(this);
++	private final transient StatisticsImplementor statistics;
+ 	private final transient EventListeners eventListeners;
+ 	private final transient CurrentSessionContext currentSessionContext;
+ 	private final transient EntityNotFoundDelegate entityNotFoundDelegate;
+@@ -193,7 +193,8 @@
+ 	        Mapping mapping,
+ 	        Settings settings,
+ 	        EventListeners listeners,
+-			SessionFactoryObserver observer) throws HibernateException {
++			SessionFactoryObserver observer,
++			StatisticsFactory statisticsFactory) throws HibernateException {
+ 		log.info("building session factory");
+ 		this.properties = new Properties();
+ 		this.properties.putAll( cfg.getProperties() );
+@@ -414,8 +415,8 @@
+ 		}
+ 
+ 		//stats
+-		getStatistics().setStatisticsEnabled( settings.isStatisticsEnabled() );
+-
++		statisticsFactory.setDefaultStatisticsEnabled( settings.isStatisticsEnabled() );
++		this.statistics = statisticsFactory.createStatisticsImplementor(this, cfg);
+ 		// EntityNotFoundDelegate
+ 		EntityNotFoundDelegate entityNotFoundDelegate = cfg.getEntityNotFoundDelegate();
+ 		if ( entityNotFoundDelegate == null ) {
+Index: core/src/main/java/org/hibernate/id/factory/IdentifierGeneratorFactory.java
+===================================================================
+--- core/src/main/java/org/hibernate/id/factory/IdentifierGeneratorFactory.java	(revision 18914)
++++ core/src/main/java/org/hibernate/id/factory/IdentifierGeneratorFactory.java	(working copy)
+@@ -25,7 +25,6 @@
+ package org.hibernate.id.factory;
+ 
+ import java.util.Properties;
+-import java.io.Serializable;
+ 
+ import org.hibernate.id.IdentifierGenerator;
+ import org.hibernate.type.Type;
+@@ -65,4 +64,6 @@
+ 	 * @return The generator class.
+ 	 */
+ 	public Class getIdentifierGeneratorClass(String strategy);
++	
++	public void register(String strategy, Class generatorClass);
+ }
+Index: core/src/main/java/org/hibernate/id/factory/DefaultIdentifierGeneratorFactory.java
+===================================================================
+--- core/src/main/java/org/hibernate/id/factory/DefaultIdentifierGeneratorFactory.java	(revision 18914)
++++ core/src/main/java/org/hibernate/id/factory/DefaultIdentifierGeneratorFactory.java	(working copy)
+@@ -24,6 +24,7 @@
+  */
+ package org.hibernate.id.factory;
+ 
++import java.io.Serializable;
+ import java.util.Properties;
+ import java.io.Serializable;
+ 
+Index: core/src/main/java/org/hibernate/stat/SessionStatisticsImpl.java (deleted)
+===================================================================
+Index: core/src/main/java/org/hibernate/stat/QueryStatistics.java
+===================================================================
+--- core/src/main/java/org/hibernate/stat/QueryStatistics.java	(revision 18914)
++++ core/src/main/java/org/hibernate/stat/QueryStatistics.java	(working copy)
+@@ -26,109 +26,75 @@
+ 
+ /**
+  * Query statistics (HQL and SQL)
+- * 
++ *
+  * Note that for a cached query, the cache miss is equals to the db count
+- * 
++ *
+  * @author Gavin King
++ * @author Patrick Moore
+  */
+-public class QueryStatistics extends CategorizedStatistics {
++public interface QueryStatistics extends CategorizedStats {
+ 
+-	/*package*/ long cacheHitCount;
+-	/*package*/ long cacheMissCount;
+-	/*package*/ long cachePutCount;
+-	private long executionCount;
+-	private long executionRowCount;
+-	private long executionAvgTime;
+-	private long executionMaxTime;
+-	private long executionMinTime = Long.MAX_VALUE;
+-
+-	QueryStatistics(String query) {
+-		super(query);
+-	}
+-
+ 	/**
+-	 * queries executed to the DB
++	 * @return queries executed to the DB
+ 	 */
+-	public long getExecutionCount() {
+-		return executionCount;
+-	}
+-	
++	public long getExecutionCount();
++
+ 	/**
+-	 * Queries retrieved successfully from the cache
++	 * @return Queries retrieved successfully from the cache
+ 	 */
+-	public long getCacheHitCount() {
+-		return cacheHitCount;
+-	}
+-	
+-	public long getCachePutCount() {
+-		return cachePutCount;
+-	}
+-	
+-	public long getCacheMissCount() {
+-		return cacheMissCount;
+-	}
+-	
++	public long getCacheHitCount();
++
++	public long getCachePutCount();
++
++	public long getCacheMissCount();
++
+ 	/**
+ 	 * Number of lines returned by all the executions of this query (from DB)
+-	 * For now, {@link org.hibernate.Query#iterate()} 
+-	 * and {@link org.hibernate.Query#scroll()()} do not fill this statistic
++	 * For now, {@link org.hibernate.Query#iterate()}
++	 * and {@link org.hibernate.Query#scroll()} do not fill this statistic
+ 	 *
+ 	 * @return The number of rows cumulatively returned by the given query; iterate
+ 	 * and scroll queries do not effect this total as their number of returned rows
+ 	 * is not known at execution time.
+ 	 */
+-	public long getExecutionRowCount() {
+-		return executionRowCount;
+-	}
++	public long getExecutionRowCount();
+ 
+ 	/**
+-	 * average time in ms taken by the excution of this query onto the DB
++	 * @return average time in ms taken by the excution of this query onto the DB
+ 	 */
+-	public long getExecutionAvgTime() {
+-		return executionAvgTime;
+-	}
++	public long getExecutionAvgTime();
+ 
+ 	/**
+-	 * max time in ms taken by the excution of this query onto the DB
++	 * @return max time in ms taken by the excution of this query onto the DB
+ 	 */
+-	public long getExecutionMaxTime() {
+-		return executionMaxTime;
+-	}
+-	
++	public long getExecutionMaxTime() ;
++
+ 	/**
+-	 * min time in ms taken by the excution of this query onto the DB
++	 * @return min time in ms taken by the excution of this query onto the DB
+ 	 */
+-	public long getExecutionMinTime() {
+-		return executionMinTime;
+-	}
+-	
++	public long getExecutionMinTime();
++
+ 	/**
+ 	 * add statistics report of a DB query
+-	 * 
++	 *
+ 	 * @param rows rows count returned
+ 	 * @param time time taken
+ 	 */
+-	void executed(long rows, long time) {
+-		if (time < executionMinTime) executionMinTime = time;
+-		if (time > executionMaxTime) executionMaxTime = time;
+-		executionAvgTime = ( executionAvgTime * executionCount + time ) / ( executionCount + 1 );
+-		executionCount++;
+-		executionRowCount += rows;
+-	}
++	public void executed(long rows, long time);
+ 
+-	public String toString() {
+-		return new StringBuffer()
+-				.append( "QueryStatistics" )
+-				.append( "[cacheHitCount=" ).append( this.cacheHitCount )
+-				.append( ",cacheMissCount=" ).append( this.cacheMissCount )
+-				.append( ",cachePutCount=" ).append( this.cachePutCount )
+-				.append( ",executionCount=" ).append( this.executionCount )
+-				.append( ",executionRowCount=" ).append( this.executionRowCount )
+-				.append( ",executionAvgTime=" ).append( this.executionAvgTime )
+-				.append( ",executionMaxTime=" ).append( this.executionMaxTime )
+-				.append( ",executionMinTime=" ).append( this.executionMinTime )
+-				.append( ']' )
+-				.toString();
+-	}
++	/**
++	 *
++	 */
++	public long incrCachePutCount();
+ 
++	/**
++	 *
++	 */
++	public long incrCacheMissCount();
++
++	/**
++	 *
++	 */
++	public long incrCacheHitCount();
++
+ }
+Index: core/src/main/java/org/hibernate/stat/SecondLevelCacheStatistics.java
+===================================================================
+--- core/src/main/java/org/hibernate/stat/SecondLevelCacheStatistics.java	(revision 18914)
++++ core/src/main/java/org/hibernate/stat/SecondLevelCacheStatistics.java	(working copy)
+@@ -24,71 +24,33 @@
+  */
+ package org.hibernate.stat;
+ 
+-import java.util.HashMap;
+-import java.util.Iterator;
+ import java.util.Map;
+ 
+-import org.hibernate.cache.CacheKey;
+-import org.hibernate.cache.Region;
+-
+ /**
+  * Second level cache statistics of a specific region
+- * 
++ *
+  * @author Gavin King
+  */
+-public class SecondLevelCacheStatistics extends CategorizedStatistics {
+-	
+-    private transient Region region;
+-	long hitCount;
+-	long missCount;
+-	long putCount;
++public interface SecondLevelCacheStatistics extends CategorizedStats {
+ 
+-	SecondLevelCacheStatistics(Region region) {
+-		super( region.getName() );
+-		this.region = region;
+-	}
+-	public long getHitCount() {
+-		return hitCount;
+-	}
+-	public long getMissCount() {
+-		return missCount;
+-	}
+-	public long getPutCount() {
+-		return putCount;
+-	}
+-	public long getElementCountInMemory() {
+-		return region.getElementCountInMemory();
+-	}
+-	public long getElementCountOnDisk() {
+-		return region.getElementCountOnDisk();
+-	}
+-	public long getSizeInMemory() {
+-		return region.getSizeInMemory();
+-	}
+-	
+-	public Map getEntries() {
+-		Map map = new HashMap();
+-		Iterator iter = region.toMap().entrySet().iterator();
+-		while ( iter.hasNext() ) {
+-			Map.Entry me = (Map.Entry) iter.next();
+-			map.put( ( (CacheKey) me.getKey() ).getKey(), me.getValue() );
+-		}
+-		return map;
+-	}
++	public long getHitCount();
++	/**
++	 *
++	 */
++	public long incrHitCount();
++	public long getMissCount();
++	/**
++	 *
++	 */
++	public long incrMissCount();
++	public long getPutCount();
++	/**
++	 *
++	 */
++	public long incrPutCount();
++	public long getElementCountInMemory();
++	public long getElementCountOnDisk();
++	public long getSizeInMemory();
+ 
+-	public String toString() {
+-		StringBuffer buf = new StringBuffer()
+-		    .append("SecondLevelCacheStatistics")
+-			.append("[hitCount=").append(this.hitCount)
+-			.append(",missCount=").append(this.missCount)
+-			.append(",putCount=").append(this.putCount);
+-		//not sure if this would ever be null but wanted to be careful
+-		if ( region != null ) {
+-			buf.append(",elementCountInMemory=").append(this.getElementCountInMemory())
+-				.append(",elementCountOnDisk=").append(this.getElementCountOnDisk())
+-				.append(",sizeInMemory=").append(this.getSizeInMemory());
+-		}
+-		buf.append(']');
+-		return buf.toString();
+-	}
++	public Map getEntries();
+ }
+Index: core/src/main/java/org/hibernate/stat/StatisticsImplementor.java
+===================================================================
+--- core/src/main/java/org/hibernate/stat/StatisticsImplementor.java	(revision 18914)
++++ core/src/main/java/org/hibernate/stat/StatisticsImplementor.java	(working copy)
+@@ -24,12 +24,14 @@
+  */
+ package org.hibernate.stat;
+ 
++import java.io.Serializable;
++
+ /**
+  * Statistics SPI for the Hibernate core
+- * 
++ * Serializable s
+  * @author Emmanuel Bernard
+  */
+-public interface StatisticsImplementor {
++public interface StatisticsImplementor extends Statistics, Serializable {
+ 	public void openSession();
+ 	public void closeSession();
+ 	public void flush();
+Index: core/src/main/java/org/hibernate/stat/CollectionStatistics.java
+===================================================================
+--- core/src/main/java/org/hibernate/stat/CollectionStatistics.java	(revision 18914)
++++ core/src/main/java/org/hibernate/stat/CollectionStatistics.java	(working copy)
+@@ -26,46 +26,34 @@
+ 
+ /**
+  * Collection related statistics
+- * 
++ *
+  * @author Gavin King
+  */
+-public class CollectionStatistics extends CategorizedStatistics {
+-	
+-	CollectionStatistics(String role) {
+-		super(role);
+-	}
+-	
+-	long loadCount;
+-	long fetchCount;
+-	long updateCount;
+-	long removeCount;
+-	long recreateCount;
+-	
+-	public long getLoadCount() {
+-		return loadCount;
+-	}
+-	public long getFetchCount() {
+-		return fetchCount;
+-	}
+-	public long getRecreateCount() {
+-		return recreateCount;
+-	}
+-	public long getRemoveCount() {
+-		return removeCount;
+-	}
+-	public long getUpdateCount() {
+-		return updateCount;
+-	}
++public interface CollectionStatistics extends CategorizedStats {
+ 
+-	public String toString() {
+-		return new StringBuffer()
+-		    .append("CollectionStatistics")
+-			.append("[loadCount=").append(this.loadCount)
+-			.append(",fetchCount=").append(this.fetchCount)
+-			.append(",recreateCount=").append(this.recreateCount)
+-			.append(",removeCount=").append(this.removeCount)
+-			.append(",updateCount=").append(this.updateCount)
+-			.append(']')
+-			.toString();
+-	}
++	public long getLoadCount();
++	public long getFetchCount();
++	public long getRecreateCount() ;
++	public long getRemoveCount();
++	public long getUpdateCount();
++	/**
++	 *
++	 */
++	public long incrLoadCount();
++	/**
++	 *
++	 */
++	public long incrFetchCount();
++	/**
++	 *
++	 */
++	public long incrUpdateCount();
++	/**
++	 *
++	 */
++	public long incrRemoveCount();
++	/**
++	 *
++	 */
++	public long incrRecreateCount();
+ }
+\ No newline at end of file
+Index: core/src/main/java/org/hibernate/stat/EntityStatistics.java
+===================================================================
+--- core/src/main/java/org/hibernate/stat/EntityStatistics.java	(revision 18914)
++++ core/src/main/java/org/hibernate/stat/EntityStatistics.java	(working copy)
+@@ -27,52 +27,38 @@
+ 
+ /**
+  * Entity related statistics
+- * 
++ *
+  * @author Gavin King
+  */
+-public class EntityStatistics extends CategorizedStatistics {
+-	
+-	EntityStatistics(String name) {
+-		super(name);
+-	}
+-
+-	long loadCount;
+-	long updateCount;
+-	long insertCount;
+-	long deleteCount;
+-	long fetchCount;
+-	long optimisticFailureCount;
+-
+-	public long getDeleteCount() {
+-		return deleteCount;
+-	}
+-	public long getInsertCount() {
+-		return insertCount;
+-	}
+-	public long getLoadCount() {
+-		return loadCount;
+-	}
+-	public long getUpdateCount() {
+-		return updateCount;
+-	}
+-	public long getFetchCount() {
+-		return fetchCount;
+-	}
+-	public long getOptimisticFailureCount() {
+-		return optimisticFailureCount;
+-	}
+-
+-	public String toString() {
+-		return new StringBuffer()
+-		    .append("EntityStatistics")
+-			.append("[loadCount=").append(this.loadCount)
+-			.append(",updateCount=").append(this.updateCount)
+-			.append(",insertCount=").append(this.insertCount)
+-			.append(",deleteCount=").append(this.deleteCount)
+-			.append(",fetchCount=").append(this.fetchCount)
+-			.append(",optimisticLockFailureCount=").append(this.optimisticFailureCount)
+-			.append(']')
+-			.toString();
+-	}
+-
++public interface EntityStatistics extends CategorizedStats {
++	public long getDeleteCount();
++	public long getInsertCount();
++	public long getLoadCount();
++	public long getUpdateCount();
++	public long getFetchCount();
++	public long getOptimisticFailureCount();
++	/**
++	 *
++	 */
++	public long incrLoadCount();
++	/**
++	 *
++	 */
++	public long incrFetchCount();
++	/**
++	 *
++	 */
++	public long incrUpdateCount();
++	/**
++	 *
++	 */
++	public long incrInsertCount();
++	/**
++	 *
++	 */
++	public long incrDeleteCount();
++	/**
++	 *
++	 */
++	public long incrOptimisticFailureCount();
+ }
+Index: core/src/main/java/org/hibernate/stat/simple/SessionStatisticsImpl.java
+===================================================================
+--- core/src/main/java/org/hibernate/stat/simple/SessionStatisticsImpl.java	(revision 0)
++++ core/src/main/java/org/hibernate/stat/simple/SessionStatisticsImpl.java	(working copy)
+@@ -22,12 +22,13 @@
+  * Boston, MA  02110-1301  USA
+  *
+  */
+-package org.hibernate.stat;
++package org.hibernate.stat.simple;
+ 
+ import java.util.Collections;
+ import java.util.Set;
+ 
+ import org.hibernate.engine.SessionImplementor;
++import org.hibernate.stat.SessionStatistics;
+ 
+ /**
+  * @author Gavin King
+
+Property changes on: core/src/main/java/org/hibernate/stat/simple/SessionStatisticsImpl.java
+___________________________________________________________________
+Added: svn:mergeinfo
+
+Index: core/src/main/java/org/hibernate/stat/simple/QueryStatisticsImpl.java
+===================================================================
+--- core/src/main/java/org/hibernate/stat/simple/QueryStatisticsImpl.java	(revision 0)
++++ core/src/main/java/org/hibernate/stat/simple/QueryStatisticsImpl.java	(working copy)
+@@ -22,95 +22,108 @@
+  * Boston, MA  02110-1301  USA
+  *
+  */
+-package org.hibernate.stat;
++package org.hibernate.stat.simple;
+ 
++import org.hibernate.stat.QueryStatistics;
++
++
+ /**
+  * Query statistics (HQL and SQL)
+- * 
++ *
+  * Note that for a cached query, the cache miss is equals to the db count
+- * 
++ *
+  * @author Gavin King
++ * @author Patrick Moore
+  */
+-public class QueryStatistics extends CategorizedStatistics {
++public class QueryStatisticsImpl extends CategorizedStatistics implements QueryStatistics {
+ 
+-	/*package*/ long cacheHitCount;
+-	/*package*/ long cacheMissCount;
+-	/*package*/ long cachePutCount;
++	private long cacheHitCount;
++	private long cacheMissCount;
++	private long cachePutCount;
+ 	private long executionCount;
+ 	private long executionRowCount;
+ 	private long executionAvgTime;
+ 	private long executionMaxTime;
+ 	private long executionMinTime = Long.MAX_VALUE;
+ 
+-	QueryStatistics(String query) {
++	public QueryStatisticsImpl(String query) {
+ 		super(query);
+ 	}
+ 
+-	/**
+-	 * queries executed to the DB
+-	 */
+ 	public long getExecutionCount() {
+ 		return executionCount;
+ 	}
+-	
++
+ 	/**
+ 	 * Queries retrieved successfully from the cache
+ 	 */
+-	public long getCacheHitCount() {
++	public synchronized long getCacheHitCount() {
+ 		return cacheHitCount;
+ 	}
+-	
+-	public long getCachePutCount() {
++	public synchronized long incrCacheHitCount() {
++		return ++cacheHitCount;
++	}
++
++	public synchronized long getCachePutCount() {
+ 		return cachePutCount;
+ 	}
+-	
+-	public long getCacheMissCount() {
++	public synchronized long incrCachePutCount() {
++		return ++cachePutCount;
++	}
++
++	public synchronized long getCacheMissCount() {
+ 		return cacheMissCount;
+ 	}
+-	
++	public synchronized long incrCacheMissCount() {
++		return ++cacheMissCount;
++	}
+ 	/**
+ 	 * Number of lines returned by all the executions of this query (from DB)
+-	 * For now, {@link org.hibernate.Query#iterate()} 
+-	 * and {@link org.hibernate.Query#scroll()()} do not fill this statistic
++	 * For now, {@link org.hibernate.Query#iterate()}
++	 * and {@link org.hibernate.Query#scroll()} do not fill this statistic
+ 	 *
+ 	 * @return The number of rows cumulatively returned by the given query; iterate
+ 	 * and scroll queries do not effect this total as their number of returned rows
+ 	 * is not known at execution time.
+ 	 */
+-	public long getExecutionRowCount() {
++	public synchronized long getExecutionRowCount() {
+ 		return executionRowCount;
+ 	}
+ 
+ 	/**
+ 	 * average time in ms taken by the excution of this query onto the DB
+ 	 */
+-	public long getExecutionAvgTime() {
++	public synchronized long getExecutionAvgTime() {
+ 		return executionAvgTime;
+ 	}
+ 
+ 	/**
+ 	 * max time in ms taken by the excution of this query onto the DB
+ 	 */
+-	public long getExecutionMaxTime() {
++	public synchronized long getExecutionMaxTime() {
+ 		return executionMaxTime;
+ 	}
+-	
++
+ 	/**
+ 	 * min time in ms taken by the excution of this query onto the DB
+ 	 */
+-	public long getExecutionMinTime() {
++	public synchronized long getExecutionMinTime() {
+ 		return executionMinTime;
+ 	}
+-	
++
+ 	/**
+ 	 * add statistics report of a DB query
+-	 * 
++	 *
+ 	 * @param rows rows count returned
+ 	 * @param time time taken
+ 	 */
+-	void executed(long rows, long time) {
+-		if (time < executionMinTime) executionMinTime = time;
+-		if (time > executionMaxTime) executionMaxTime = time;
++	public synchronized void executed(long rows, long time) {
++		if (time < executionMinTime) {
++            executionMinTime = time;
++        }
++		if (time > executionMaxTime) {
++            executionMaxTime = time;
++        }
+ 		executionAvgTime = ( executionAvgTime * executionCount + time ) / ( executionCount + 1 );
+ 		executionCount++;
+ 		executionRowCount += rows;
+
+Property changes on: core/src/main/java/org/hibernate/stat/simple/QueryStatisticsImpl.java
+___________________________________________________________________
+Added: svn:mergeinfo
+
+Index: core/src/main/java/org/hibernate/stat/simple/SecondLevelCacheStatisticsImpl.java
+===================================================================
+--- core/src/main/java/org/hibernate/stat/simple/SecondLevelCacheStatisticsImpl.java	(revision 0)
++++ core/src/main/java/org/hibernate/stat/simple/SecondLevelCacheStatisticsImpl.java	(working copy)
+@@ -22,7 +22,7 @@
+  * Boston, MA  02110-1301  USA
+  *
+  */
+-package org.hibernate.stat;
++package org.hibernate.stat.simple;
+ 
+ import java.util.HashMap;
+ import java.util.Iterator;
+@@ -30,42 +30,52 @@
+ 
+ import org.hibernate.cache.CacheKey;
+ import org.hibernate.cache.Region;
++import org.hibernate.stat.SecondLevelCacheStatistics;
+ 
+ /**
+  * Second level cache statistics of a specific region
+- * 
++ *
+  * @author Gavin King
+  */
+-public class SecondLevelCacheStatistics extends CategorizedStatistics {
+-	
++public class SecondLevelCacheStatisticsImpl extends CategorizedStatistics implements SecondLevelCacheStatistics {
++
+     private transient Region region;
+-	long hitCount;
+-	long missCount;
+-	long putCount;
++	private long hitCount;
++	private long missCount;
++	private long putCount;
+ 
+-	SecondLevelCacheStatistics(Region region) {
++	public SecondLevelCacheStatisticsImpl(Region region) {
+ 		super( region.getName() );
+ 		this.region = region;
+ 	}
+-	public long getHitCount() {
++	public synchronized long getHitCount() {
+ 		return hitCount;
+ 	}
+-	public long getMissCount() {
++	public synchronized long incrHitCount() {
++		return ++hitCount;
++	}
++	public synchronized long getMissCount() {
+ 		return missCount;
+ 	}
+-	public long getPutCount() {
++	public synchronized long incrMissCount() {
++		return ++missCount;
++	}
++	public synchronized long getPutCount() {
+ 		return putCount;
+ 	}
+-	public long getElementCountInMemory() {
++	public synchronized long incrPutCount() {
++		return ++putCount;
++	}
++	public synchronized long getElementCountInMemory() {
+ 		return region.getElementCountInMemory();
+ 	}
+-	public long getElementCountOnDisk() {
++	public synchronized long getElementCountOnDisk() {
+ 		return region.getElementCountOnDisk();
+ 	}
+ 	public long getSizeInMemory() {
+ 		return region.getSizeInMemory();
+ 	}
+-	
++
+ 	public Map getEntries() {
+ 		Map map = new HashMap();
+ 		Iterator iter = region.toMap().entrySet().iterator();
+@@ -78,7 +88,7 @@
+ 
+ 	public String toString() {
+ 		StringBuffer buf = new StringBuffer()
+-		    .append("SecondLevelCacheStatistics")
++		    .append("SecondLevelCacheStats")
+ 			.append("[hitCount=").append(this.hitCount)
+ 			.append(",missCount=").append(this.missCount)
+ 			.append(",putCount=").append(this.putCount);
+
+Property changes on: core/src/main/java/org/hibernate/stat/simple/SecondLevelCacheStatisticsImpl.java
+___________________________________________________________________
+Added: svn:mergeinfo
+
+Index: core/src/main/java/org/hibernate/stat/simple/CollectionStatisticsImpl.java
+===================================================================
+--- core/src/main/java/org/hibernate/stat/simple/CollectionStatisticsImpl.java	(revision 0)
++++ core/src/main/java/org/hibernate/stat/simple/CollectionStatisticsImpl.java	(working copy)
+@@ -22,40 +22,61 @@
+  * Boston, MA  02110-1301  USA
+  *
+  */
+-package org.hibernate.stat;
++package org.hibernate.stat.simple;
+ 
++import org.hibernate.stat.CollectionStatistics;
++
+ /**
+  * Collection related statistics
+- * 
++ *
+  * @author Gavin King
+  */
+-public class CollectionStatistics extends CategorizedStatistics {
+-	
+-	CollectionStatistics(String role) {
++public class CollectionStatisticsImpl extends CategorizedStatistics implements CollectionStatistics {
++
++	private long loadCount;
++	private long fetchCount;
++	private long updateCount;
++	private long removeCount;
++	private long recreateCount;
++
++	public CollectionStatisticsImpl(String role) {
+ 		super(role);
+ 	}
+-	
+-	long loadCount;
+-	long fetchCount;
+-	long updateCount;
+-	long removeCount;
+-	long recreateCount;
+-	
+-	public long getLoadCount() {
++
++	public synchronized long getLoadCount() {
+ 		return loadCount;
+ 	}
+-	public long getFetchCount() {
++
++	public synchronized long incrLoadCount() {
++		return ++loadCount;
++	}
++
++	public synchronized long getFetchCount() {
+ 		return fetchCount;
+ 	}
+-	public long getRecreateCount() {
++
++	public synchronized long incrFetchCount() {
++		return ++fetchCount;
++	}
++	public synchronized long getRecreateCount() {
+ 		return recreateCount;
+ 	}
+-	public long getRemoveCount() {
++
++	public synchronized long incrRecreateCount() {
++		return ++recreateCount;
++	}
++	public synchronized long getRemoveCount() {
+ 		return removeCount;
+ 	}
+-	public long getUpdateCount() {
++	public synchronized long incrRemoveCount() {
++		return ++removeCount;
++	}
++	public synchronized long getUpdateCount() {
+ 		return updateCount;
+ 	}
++	public synchronized long incrUpdateCount() {
++		return ++updateCount;
++	}
+ 
+ 	public String toString() {
+ 		return new StringBuffer()
+
+Property changes on: core/src/main/java/org/hibernate/stat/simple/CollectionStatisticsImpl.java
+___________________________________________________________________
+Added: svn:mergeinfo
+
+Index: core/src/main/java/org/hibernate/stat/simple/EntityStatisticsImpl.java
+===================================================================
+--- core/src/main/java/org/hibernate/stat/simple/EntityStatisticsImpl.java	(revision 0)
++++ core/src/main/java/org/hibernate/stat/simple/EntityStatisticsImpl.java	(working copy)
+@@ -22,45 +22,67 @@
+  * Boston, MA  02110-1301  USA
+  *
+  */
+-package org.hibernate.stat;
++package org.hibernate.stat.simple;
+ 
++import org.hibernate.stat.EntityStatistics;
+ 
++
++
+ /**
+  * Entity related statistics
+- * 
++ *
+  * @author Gavin King
++ * @author Patrick Moore
+  */
+-public class EntityStatistics extends CategorizedStatistics {
+-	
+-	EntityStatistics(String name) {
++public class EntityStatisticsImpl extends CategorizedStatistics implements EntityStatistics {
++
++	public EntityStatisticsImpl(String name) {
+ 		super(name);
+ 	}
+ 
+-	long loadCount;
+-	long updateCount;
+-	long insertCount;
+-	long deleteCount;
+-	long fetchCount;
+-	long optimisticFailureCount;
++	private long loadCount;
++	private long updateCount;
++	private long insertCount;
++	private long deleteCount;
++	private long fetchCount;
++	private long optimisticFailureCount;
+ 
+-	public long getDeleteCount() {
++	public synchronized long getDeleteCount() {
+ 		return deleteCount;
+ 	}
+-	public long getInsertCount() {
++	public synchronized long incrDeleteCount() {
++		return ++deleteCount;
++	}
++	public synchronized long getInsertCount() {
+ 		return insertCount;
+ 	}
+-	public long getLoadCount() {
++	public synchronized long incrInsertCount() {
++		return ++insertCount;
++	}
++	public synchronized long getLoadCount() {
+ 		return loadCount;
+ 	}
+-	public long getUpdateCount() {
++	public synchronized long incrLoadCount() {
++		return ++loadCount;
++	}
++	public synchronized long getUpdateCount() {
+ 		return updateCount;
+ 	}
+-	public long getFetchCount() {
++	public synchronized long incrUpdateCount() {
++		return ++updateCount;
++	}
++	public synchronized long getFetchCount() {
+ 		return fetchCount;
+ 	}
+-	public long getOptimisticFailureCount() {
++	public synchronized long incrFetchCount() {
++		return ++fetchCount;
++	}
++	public synchronized long getOptimisticFailureCount() {
+ 		return optimisticFailureCount;
+ 	}
++	public synchronized long incrOptimisticFailureCount() {
++		return ++optimisticFailureCount;
++	}
+ 
+ 	public String toString() {
+ 		return new StringBuffer()
+
+Property changes on: core/src/main/java/org/hibernate/stat/simple/EntityStatisticsImpl.java
+___________________________________________________________________
+Added: svn:mergeinfo
+
+Index: core/src/main/java/org/hibernate/stat/simple/CategorizedStatistics.java
+===================================================================
+--- core/src/main/java/org/hibernate/stat/simple/CategorizedStatistics.java	(revision 0)
++++ core/src/main/java/org/hibernate/stat/simple/CategorizedStatistics.java	(working copy)
+@@ -22,7 +22,7 @@
+  * Boston, MA  02110-1301  USA
+  *
+  */
+-package org.hibernate.stat;
++package org.hibernate.stat.simple;
+ 
+ import java.io.Serializable;
+ 
+@@ -36,7 +36,7 @@
+ 	
+ 	private final String categoryName;
+ 
+-	CategorizedStatistics(String categoryName) {
++	public CategorizedStatistics(String categoryName) {
+ 		this.categoryName = categoryName;
+ 	}
+ 	
+
+Property changes on: core/src/main/java/org/hibernate/stat/simple/CategorizedStatistics.java
+___________________________________________________________________
+Added: svn:mergeinfo
+
+Index: core/src/main/java/org/hibernate/stat/simple/StatisticsImpl.java
+===================================================================
+--- core/src/main/java/org/hibernate/stat/simple/StatisticsImpl.java	(revision 0)
++++ core/src/main/java/org/hibernate/stat/simple/StatisticsImpl.java	(working copy)
+@@ -22,7 +22,7 @@
+  * Boston, MA  02110-1301  USA
+  *
+  */
+-package org.hibernate.stat;
++package org.hibernate.stat.simple;
+ import java.util.HashMap;
+ import java.util.Map;
+ 
+@@ -30,6 +30,15 @@
+ import org.slf4j.LoggerFactory;
+ import org.hibernate.cache.Region;
+ import org.hibernate.engine.SessionFactoryImplementor;
++import org.hibernate.engine.SessionImplementor;
++import org.hibernate.stat.CollectionStatistics;
++import org.hibernate.stat.EntityStatistics;
++import org.hibernate.stat.QueryStatistics;
++import org.hibernate.stat.SecondLevelCacheStatistics;
++import org.hibernate.stat.SessionStatistics;
++import org.hibernate.stat.Statistics;
++import org.hibernate.stat.StatisticsFactory;
++import org.hibernate.stat.StatisticsImplementor;
+ import org.hibernate.util.ArrayHelper;
+ 
+ /**
+@@ -91,13 +100,16 @@
+ 	/** entity statistics per query string (HQL or SQL) */
+ 	private final Map queryStatistics = new HashMap();
+ 
++	private StatisticsFactory statisticsFactory;
++
+ 	public StatisticsImpl() {
+ 		clear();
+ 	}
+ 
+-	public StatisticsImpl(SessionFactoryImplementor sessionFactory) {
++	public StatisticsImpl(SessionFactoryImplementor sessionFactory, StatisticsFactory statisticsFactory) {
+ 		clear();
+ 		this.sessionFactory = sessionFactory;
++		this.statisticsFactory = statisticsFactory;
+ 	}
+ 	
+ 	/**
+@@ -166,12 +178,12 @@
+ 	
+ 	public synchronized void loadEntity(String entityName) {
+ 		entityLoadCount++;
+-		getEntityStatistics(entityName).loadCount++;
++		getEntityStatistics(entityName).incrLoadCount();
+ 	}
+ 
+ 	public synchronized void fetchEntity(String entityName) {
+ 		entityFetchCount++;
+-		getEntityStatistics(entityName).fetchCount++;
++		getEntityStatistics(entityName).incrFetchCount();
+ 	}
+ 
+ 	/**
+@@ -183,7 +195,7 @@
+ 	public synchronized EntityStatistics getEntityStatistics(String entityName) {
+ 		EntityStatistics es = (EntityStatistics) entityStatistics.get(entityName);
+ 		if (es==null) {
+-			es = new EntityStatistics(entityName);
++			es = new EntityStatisticsImpl(entityName);
+ 			entityStatistics.put(entityName, es);
+ 		}
+ 		return es;
+@@ -192,19 +204,19 @@
+ 	public synchronized void updateEntity(String entityName) {
+ 		entityUpdateCount++;
+ 		EntityStatistics es = getEntityStatistics(entityName);
+-		es.updateCount++;
++		es.incrUpdateCount();
+ 	}
+ 
+ 	public synchronized void insertEntity(String entityName) {
+ 		entityInsertCount++;
+ 		EntityStatistics es = getEntityStatistics(entityName);
+-		es.insertCount++;
++		es.incrInsertCount();
+ 	}
+ 
+ 	public synchronized void deleteEntity(String entityName) {
+ 		entityDeleteCount++;
+ 		EntityStatistics es = getEntityStatistics(entityName);
+-		es.deleteCount++;
++		es.incrDeleteCount();
+ 	}
+ 
+ 	/**
+@@ -216,7 +228,7 @@
+ 	public synchronized CollectionStatistics getCollectionStatistics(String role) {
+ 		CollectionStatistics cs = (CollectionStatistics) collectionStatistics.get(role);
+ 		if (cs==null) {
+-			cs = new CollectionStatistics(role);
++			cs = new CollectionStatisticsImpl(role);
+ 			collectionStatistics.put(role, cs);
+ 		}
+ 		return cs;
+@@ -224,27 +236,27 @@
+ 	
+ 	public synchronized void loadCollection(String role) {
+ 		collectionLoadCount++;
+-		getCollectionStatistics(role).loadCount++;
++		getCollectionStatistics(role).incrLoadCount();
+ 	}
+ 
+ 	public synchronized void fetchCollection(String role) {
+ 		collectionFetchCount++;
+-		getCollectionStatistics(role).fetchCount++;
++		getCollectionStatistics(role).incrFetchCount();
+ 	}
+ 
+ 	public synchronized void updateCollection(String role) {
+ 		collectionUpdateCount++;
+-		getCollectionStatistics(role).updateCount++;
++		getCollectionStatistics(role).incrUpdateCount();
+ 	}
+ 
+ 	public synchronized void recreateCollection(String role) {
+ 		collectionRecreateCount++;
+-		getCollectionStatistics(role).recreateCount++;
++		getCollectionStatistics(role).incrRecreateCount();
+ 	}
+ 
+ 	public synchronized void removeCollection(String role) {
+ 		collectionRemoveCount++;
+-		getCollectionStatistics(role).removeCount++;
++		getCollectionStatistics(role).incrRemoveCount();
+ 	}
+ 	
+ 	/**
+@@ -263,7 +275,7 @@
+ 			if ( region == null ) {
+ 				return null;
+ 			}
+-			slcs = new SecondLevelCacheStatistics( region );
++			slcs = new SecondLevelCacheStatisticsImpl( region );
+ 			secondLevelCacheStatistics.put( regionName, slcs );
+ 		}
+ 		return slcs;
+@@ -271,17 +283,17 @@
+ 
+ 	public synchronized void secondLevelCachePut(String regionName) {
+ 		secondLevelCachePutCount++;
+-		getSecondLevelCacheStatistics(regionName).putCount++;
++		getSecondLevelCacheStatistics(regionName).incrPutCount();
+ 	}
+ 
+ 	public synchronized void secondLevelCacheHit(String regionName) {
+ 		secondLevelCacheHitCount++;
+-		getSecondLevelCacheStatistics(regionName).hitCount++;
++		getSecondLevelCacheStatistics(regionName).incrHitCount();
+ 	}
+ 
+ 	public synchronized void secondLevelCacheMiss(String regionName) {
+ 		secondLevelCacheMissCount++;
+-		getSecondLevelCacheStatistics(regionName).missCount++;
++		getSecondLevelCacheStatistics(regionName).incrMissCount();
+ 	}
+ 
+ 	public synchronized void queryExecuted(String hql, int rows, long time) {
+@@ -300,30 +312,30 @@
+ 		queryCacheHitCount++;
+ 		if (hql!=null) {
+ 			QueryStatistics qs = getQueryStatistics(hql);
+-			qs.cacheHitCount++;
++			qs.incrCacheHitCount();
+ 		}
+ 		SecondLevelCacheStatistics slcs = getSecondLevelCacheStatistics(regionName);
+-		slcs.hitCount++;
++		slcs.incrHitCount();
+ 	}
+ 
+ 	public synchronized void queryCacheMiss(String hql, String regionName) {
+ 		queryCacheMissCount++;
+ 		if (hql!=null) {
+ 			QueryStatistics qs = getQueryStatistics(hql);
+-			qs.cacheMissCount++;
++			qs.incrCacheMissCount();
+ 		}
+ 		SecondLevelCacheStatistics slcs = getSecondLevelCacheStatistics(regionName);
+-		slcs.missCount++;
++		slcs.incrMissCount();
+ 	}
+ 
+ 	public synchronized void queryCachePut(String hql, String regionName) {
+ 		queryCachePutCount++;
+ 		if (hql!=null) {
+ 			QueryStatistics qs = getQueryStatistics(hql);
+-			qs.cachePutCount++;
++			qs.incrCachePutCount();
+ 		}
+ 		SecondLevelCacheStatistics slcs = getSecondLevelCacheStatistics(regionName);
+-		slcs.putCount++;
++		slcs.incrPutCount();
+ 	}
+ 
+ 	/**
+@@ -335,7 +347,7 @@
+ 	public synchronized QueryStatistics getQueryStatistics(String queryString) {
+ 		QueryStatistics qs = (QueryStatistics) queryStatistics.get(queryString);
+ 		if (qs==null) {
+-			qs = new QueryStatistics(queryString);
++			qs = new QueryStatisticsImpl(queryString);
+ 			queryStatistics.put(queryString, qs);
+ 		}
+ 		return qs;
+@@ -614,7 +626,7 @@
+ 
+ 	public void optimisticFailure(String entityName) {
+ 		optimisticFailureCount++;
+-		getEntityStatistics(entityName).optimisticFailureCount++;
++		getEntityStatistics(entityName).incrOptimisticFailureCount();
+ 	}
+ 
+ 	public long getOptimisticFailureCount() {
+@@ -658,5 +670,12 @@
+ 	public String getQueryExecutionMaxTimeQueryString() {
+ 		return queryExecutionMaxTimeQueryString;
+ 	}
++
++	/**
++	 * @see org.hibernate.stat.Statistics#getSessionStatistics(org.hibernate.engine.SessionImplementor)
++	 */
++	public SessionStatistics getSessionStatistics(SessionImplementor sessionImplementor) {
++		return this.statisticsFactory.createSessionStatistics(this, sessionImplementor);
++	}
+ 	
+ }
+\ No newline at end of file
+
+Property changes on: core/src/main/java/org/hibernate/stat/simple/StatisticsImpl.java
+___________________________________________________________________
+Added: svn:mergeinfo
+
+Index: core/src/main/java/org/hibernate/stat/Statistics.java
+===================================================================
+--- core/src/main/java/org/hibernate/stat/Statistics.java	(revision 18914)
++++ core/src/main/java/org/hibernate/stat/Statistics.java	(working copy)
+@@ -24,7 +24,9 @@
+  */
+ package org.hibernate.stat;
+ 
++import org.hibernate.engine.SessionImplementor;
+ 
++
+ /**
+  * Statistics for a particular <tt>SessionFactory</tt>.
+  * Beware of milliseconds metrics, they are depdendent of the JVM precision:
+@@ -231,4 +233,6 @@
+ 	 * that occurred
+ 	 */
+ 	public long getOptimisticFailureCount();
++
++    public SessionStatistics getSessionStatistics(SessionImplementor sessionImplementor);
+ }
+\ No newline at end of file
+Index: core/src/main/java/org/hibernate/stat/CategorizedStatistics.java (deleted)
+===================================================================
+Index: core/src/main/java/org/hibernate/stat/StatisticsImpl.java (deleted)
+===================================================================
+Index: core/src/main/java/org/hibernate/stat/package.html
+===================================================================
+--- core/src/main/java/org/hibernate/stat/package.html	(revision 18914)
++++ core/src/main/java/org/hibernate/stat/package.html	(working copy)
+@@ -30,5 +30,8 @@
+ 	This package exposes statistics about a running 
+ 	Hibernate instance to the application.
+ </p>
++<p>To substitute a different Statistics implementation, create a new implementation of StatisticsFactory, 
++and supply it to the Configuration. Configuration supplies this factory to the SessionFactoryImplementors 
++created by {@link org.hibernate.cfg.Configuration#buildSessionFactory()}.</p>
+ </body>
+ </html>
+Index: jmx/src/main/java/org/hibernate/jmx/StatisticsService.java
+===================================================================
+--- jmx/src/main/java/org/hibernate/jmx/StatisticsService.java	(revision 18914)
++++ jmx/src/main/java/org/hibernate/jmx/StatisticsService.java	(working copy)
+@@ -9,13 +9,15 @@
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.hibernate.SessionFactory;
++import org.hibernate.engine.SessionImplementor;
+ import org.hibernate.impl.SessionFactoryObjectFactory;
+ import org.hibernate.stat.CollectionStatistics;
+ import org.hibernate.stat.EntityStatistics;
+ import org.hibernate.stat.QueryStatistics;
+ import org.hibernate.stat.SecondLevelCacheStatistics;
++import org.hibernate.stat.SessionStatistics;
+ import org.hibernate.stat.Statistics;
+-import org.hibernate.stat.StatisticsImpl;
++import org.hibernate.stat.simple.StatisticsImpl;
+ 
+ /**
+  * JMX service for Hibernate statistics<br>
+@@ -314,4 +316,12 @@
+ 	public String getQueryExecutionMaxTimeQueryString() {
+ 		return stats.getQueryExecutionMaxTimeQueryString();
+ 	}
++
++	/**
++	 * @see org.hibernate.stat.Statistics#getSessionStatistics(org.hibernate.engine.SessionImplementor)
++	 */
++	public SessionStatistics getSessionStatistics(
++			SessionImplementor sessionImplementor) {
++		return stats.getSessionStatistics(sessionImplementor);
++	}
+ }

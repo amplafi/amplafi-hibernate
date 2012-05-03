@@ -1,0 +1,557 @@
+### Eclipse Workspace Patch 1.0
+#P hibernate
+Index: core/src/main/java/org/hibernate/event/PreCollectionUpdateEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/PreCollectionUpdateEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/PreCollectionUpdateEventListener.java	(working copy)
+@@ -25,12 +25,13 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Called before updating a collection
+  *
+  * @author Gail Badner
+  */
+-public interface PreCollectionUpdateEventListener extends Serializable {
++public interface PreCollectionUpdateEventListener extends Serializable, EventListener {
+ 	public void onPreUpdateCollection(PreCollectionUpdateEvent event);
+ }
+Index: core/src/main/java/org/hibernate/event/LoadEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/LoadEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/LoadEventListener.java	(working copy)
+@@ -27,13 +27,14 @@
+ import org.hibernate.HibernateException;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Defines the contract for handling of load events generated from a session.
+  *
+  * @author Steve Ebersole
+  */
+-public interface LoadEventListener extends Serializable {
++public interface LoadEventListener extends Serializable, EventListener {
+ 
+ 	/** 
+ 	 * Handle the given load event.
+Index: core/src/main/java/org/hibernate/event/PreInsertEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/PreInsertEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/PreInsertEventListener.java	(working copy)
+@@ -25,13 +25,14 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Called before inserting an item in the datastore
+  * 
+  * @author Gavin King
+  */
+-public interface PreInsertEventListener extends Serializable {
++public interface PreInsertEventListener extends Serializable, EventListener {
+ 	/**
+ 	 * Return true if the operation should be vetoed
+ 	 */
+Index: core/src/main/java/org/hibernate/event/PostUpdateEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/PostUpdateEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/PostUpdateEventListener.java	(working copy)
+@@ -25,12 +25,13 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Called after updating the datastore
+  * 
+  * @author Gavin King
+  */
+-public interface PostUpdateEventListener extends Serializable {
++public interface PostUpdateEventListener extends Serializable, EventListener {
+ 	public void onPostUpdate(PostUpdateEvent event);
+ }
+Index: core/src/main/java/org/hibernate/event/SaveOrUpdateEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/SaveOrUpdateEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/SaveOrUpdateEventListener.java	(working copy)
+@@ -25,6 +25,7 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ import org.hibernate.HibernateException;
+ 
+@@ -33,7 +34,7 @@
+  *
+  * @author Steve Ebersole
+  */
+-public interface SaveOrUpdateEventListener extends Serializable {
++public interface SaveOrUpdateEventListener extends Serializable, EventListener {
+ 
+     /** 
+      * Handle the given update event.
+Index: core/src/main/java/org/hibernate/event/PreDeleteEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/PreDeleteEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/PreDeleteEventListener.java	(working copy)
+@@ -25,13 +25,14 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Called before deleting an item from the datastore
+  * 
+  * @author Gavin King
+  */
+-public interface PreDeleteEventListener extends Serializable {
++public interface PreDeleteEventListener extends Serializable, EventListener {
+ 	/**
+ 	 * Return true if the operation should be vetoed
+ 	 */
+Index: core/src/main/java/org/hibernate/event/PostInsertEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/PostInsertEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/PostInsertEventListener.java	(working copy)
+@@ -25,12 +25,13 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Called after insterting an item in the datastore
+  * 
+  * @author Gavin King
+  */
+-public interface PostInsertEventListener extends Serializable {
++public interface PostInsertEventListener extends Serializable, EventListener {
+ 	public void onPostInsert(PostInsertEvent event);
+ }
+Index: core/src/main/java/org/hibernate/event/PreLoadEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/PreLoadEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/PreLoadEventListener.java	(working copy)
+@@ -25,6 +25,7 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Called before injecting property values into a newly 
+@@ -32,6 +33,6 @@
+  *
+  * @author Gavin King
+  */
+-public interface PreLoadEventListener extends Serializable {
++public interface PreLoadEventListener extends Serializable, EventListener {
+ 	public void onPreLoad(PreLoadEvent event);
+ }
+Index: core/src/main/java/org/hibernate/event/DeleteEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/DeleteEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/DeleteEventListener.java	(working copy)
+@@ -27,6 +27,7 @@
+ import org.hibernate.HibernateException;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ import java.util.Set;
+ 
+ /**
+@@ -34,7 +35,7 @@
+  *
+  * @author Steve Ebersole
+  */
+-public interface DeleteEventListener extends Serializable {
++public interface DeleteEventListener extends Serializable, EventListener {
+ 
+     /** Handle the given delete event.
+      *
+Index: core/src/main/java/org/hibernate/event/PersistEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/PersistEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/PersistEventListener.java	(working copy)
+@@ -25,6 +25,7 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ import java.util.Map;
+ 
+ import org.hibernate.HibernateException;
+@@ -34,7 +35,7 @@
+  *
+  * @author Gavin King
+  */
+-public interface PersistEventListener extends Serializable {
++public interface PersistEventListener extends Serializable, EventListener {
+ 
+     /** 
+      * Handle the given create event.
+Index: core/src/main/java/org/hibernate/event/MergeEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/MergeEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/MergeEventListener.java	(working copy)
+@@ -25,6 +25,7 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ import java.util.Map;
+ 
+ import org.hibernate.HibernateException;
+@@ -34,7 +35,7 @@
+  *
+  * @author Gavin King
+  */
+-public interface MergeEventListener extends Serializable {
++public interface MergeEventListener extends Serializable, EventListener {
+ 
+     /** 
+      * Handle the given merge event.
+Index: core/src/main/java/org/hibernate/event/FlushEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/FlushEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/FlushEventListener.java	(working copy)
+@@ -27,13 +27,14 @@
+ import org.hibernate.HibernateException;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Defines the contract for handling of session flush events.
+  *
+  * @author Steve Ebersole
+  */
+-public interface FlushEventListener extends Serializable {
++public interface FlushEventListener extends Serializable, EventListener {
+ 
+     /** Handle the given flush event.
+      *
+Index: core/src/main/java/org/hibernate/event/InitializeCollectionEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/InitializeCollectionEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/InitializeCollectionEventListener.java	(working copy)
+@@ -27,6 +27,7 @@
+ import org.hibernate.HibernateException;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Defines the contract for handling of collection initialization events 
+@@ -34,7 +35,7 @@
+  *
+  * @author Gavin King
+  */
+-public interface InitializeCollectionEventListener extends Serializable {
++public interface InitializeCollectionEventListener extends Serializable, EventListener {
+ 
+ 	public void onInitializeCollection(InitializeCollectionEvent event) throws HibernateException;
+ 
+Index: core/src/main/java/org/hibernate/event/LockEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/LockEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/LockEventListener.java	(working copy)
+@@ -27,13 +27,14 @@
+ import org.hibernate.HibernateException;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Defines the contract for handling of lock events generated from a session.
+  *
+  * @author Steve Ebersole
+  */
+-public interface LockEventListener extends Serializable {
++public interface LockEventListener extends Serializable, EventListener {
+ 
+     /** Handle the given lock event.
+      *
+Index: core/src/main/java/org/hibernate/event/RefreshEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/RefreshEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/RefreshEventListener.java	(working copy)
+@@ -27,6 +27,7 @@
+ import org.hibernate.HibernateException;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ import java.util.Map;
+ 
+ /**
+@@ -34,7 +35,7 @@
+  *
+  * @author Steve Ebersole
+  */
+-public interface RefreshEventListener extends Serializable {
++public interface RefreshEventListener extends Serializable, EventListener {
+ 
+     /** 
+      * Handle the given refresh event.
+Index: core/src/main/java/org/hibernate/event/PostLoadEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/PostLoadEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/PostLoadEventListener.java	(working copy)
+@@ -25,12 +25,13 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Occurs after an an entity instance is fully loaded.
+  *
+  * @author <a href="mailto:kabir.khan@jboss.org">Kabir Khan</a>
+  */
+-public interface PostLoadEventListener extends Serializable {
++public interface PostLoadEventListener extends Serializable, EventListener {
+ 	public void onPostLoad(PostLoadEvent event);
+ }
+Index: core/src/main/java/org/hibernate/event/EvictEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/EvictEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/EvictEventListener.java	(working copy)
+@@ -27,13 +27,14 @@
+ import org.hibernate.HibernateException;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Defines the contract for handling of evict events generated from a session.
+  *
+  * @author Steve Ebersole
+  */
+-public interface EvictEventListener extends Serializable {
++public interface EvictEventListener extends Serializable, EventListener {
+ 
+     /** 
+      * Handle the given evict event.
+Index: core/src/main/java/org/hibernate/event/PreCollectionRemoveEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/PreCollectionRemoveEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/PreCollectionRemoveEventListener.java	(working copy)
+@@ -25,12 +25,13 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Called before removing a collection
+  *
+  * @author Gail Badner
+  */
+-public interface PreCollectionRemoveEventListener extends Serializable {
++public interface PreCollectionRemoveEventListener extends Serializable, EventListener {
+ 	public void onPreRemoveCollection(PreCollectionRemoveEvent event);
+ }
+Index: core/src/main/java/org/hibernate/event/DirtyCheckEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/DirtyCheckEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/DirtyCheckEventListener.java	(working copy)
+@@ -27,13 +27,14 @@
+ import org.hibernate.HibernateException;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Defines the contract for handling of session dirty-check events.
+  *
+  * @author Steve Ebersole
+  */
+-public interface DirtyCheckEventListener extends Serializable {
++public interface DirtyCheckEventListener extends Serializable, EventListener {
+ 
+     /** Handle the given dirty-check event.
+      *
+Index: core/src/main/java/org/hibernate/event/PostDeleteEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/PostDeleteEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/PostDeleteEventListener.java	(working copy)
+@@ -25,12 +25,13 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Called after deleting an item from the datastore
+  * 
+  * @author Gavin King
+  */
+-public interface PostDeleteEventListener extends Serializable {
++public interface PostDeleteEventListener extends Serializable, EventListener {
+ 	public void onPostDelete(PostDeleteEvent event);
+ }
+Index: core/src/main/java/org/hibernate/event/PostCollectionRemoveEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/PostCollectionRemoveEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/PostCollectionRemoveEventListener.java	(working copy)
+@@ -25,12 +25,13 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Called after removing a collection
+  *
+  * @author Gail Badner
+  */
+-public interface PostCollectionRemoveEventListener extends Serializable {
++public interface PostCollectionRemoveEventListener extends Serializable, EventListener {
+ 	public void onPostRemoveCollection(PostCollectionRemoveEvent event);
+ }
+Index: core/src/main/java/org/hibernate/event/PostCollectionUpdateEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/PostCollectionUpdateEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/PostCollectionUpdateEventListener.java	(working copy)
+@@ -25,12 +25,13 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Called after updating a collection
+  *
+  * @author Gail Badner
+  */
+-public interface PostCollectionUpdateEventListener extends Serializable {
++public interface PostCollectionUpdateEventListener extends Serializable, EventListener {
+ 	public void onPostUpdateCollection(PostCollectionUpdateEvent event);
+ }
+Index: core/src/main/java/org/hibernate/event/PreCollectionRecreateEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/PreCollectionRecreateEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/PreCollectionRecreateEventListener.java	(working copy)
+@@ -25,12 +25,13 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Called before recreating a collection
+  *
+  * @author Gail Badner
+  */
+-public interface PreCollectionRecreateEventListener extends Serializable {
++public interface PreCollectionRecreateEventListener extends Serializable, EventListener {
+ 	public void onPreRecreateCollection(PreCollectionRecreateEvent event);
+ }
+Index: core/src/main/java/org/hibernate/event/FlushEntityEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/FlushEntityEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/FlushEntityEventListener.java	(working copy)
+@@ -25,12 +25,13 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ import org.hibernate.HibernateException;
+ 
+ /**
+  * @author Gavin King
+  */
+-public interface FlushEntityEventListener extends Serializable {
++public interface FlushEntityEventListener extends Serializable, EventListener {
+ 	public void onFlushEntity(FlushEntityEvent event) throws HibernateException;
+ }
+Index: core/src/main/java/org/hibernate/event/ReplicateEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/ReplicateEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/ReplicateEventListener.java	(working copy)
+@@ -27,13 +27,14 @@
+ import org.hibernate.HibernateException;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Defines the contract for handling of replicate events generated from a session.
+  *
+  * @author Steve Ebersole
+  */
+-public interface ReplicateEventListener extends Serializable {
++public interface ReplicateEventListener extends Serializable, EventListener {
+ 
+     /** Handle the given replicate event.
+      *
+Index: core/src/main/java/org/hibernate/event/PreUpdateEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/PreUpdateEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/PreUpdateEventListener.java	(working copy)
+@@ -25,13 +25,14 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Called before updating the datastore
+  * 
+  * @author Gavin King
+  */
+-public interface PreUpdateEventListener extends Serializable {
++public interface PreUpdateEventListener extends Serializable, EventListener {
+ 	/**
+ 	 * Return true if the operation should be vetoed
+ 	 */
+Index: core/src/main/java/org/hibernate/event/PostCollectionRecreateEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/PostCollectionRecreateEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/PostCollectionRecreateEventListener.java	(working copy)
+@@ -25,12 +25,13 @@
+ package org.hibernate.event;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Called after recreating a collection
+  *
+  * @author Gail Badner
+  */
+-public interface PostCollectionRecreateEventListener extends Serializable {
++public interface PostCollectionRecreateEventListener extends Serializable, EventListener {
+ 	public void onPostRecreateCollection(PostCollectionRecreateEvent event);
+ }
+Index: core/src/main/java/org/hibernate/event/AutoFlushEventListener.java
+===================================================================
+--- core/src/main/java/org/hibernate/event/AutoFlushEventListener.java	(revision 15666)
++++ core/src/main/java/org/hibernate/event/AutoFlushEventListener.java	(working copy)
+@@ -27,13 +27,14 @@
+ import org.hibernate.HibernateException;
+ 
+ import java.io.Serializable;
++import java.util.EventListener;
+ 
+ /**
+  * Defines the contract for handling of session auto-flush events.
+  *
+  * @author Steve Ebersole
+  */
+-public interface AutoFlushEventListener extends Serializable {
++public interface AutoFlushEventListener extends Serializable, EventListener {
+ 
+     /** Handle the given auto-flush event.
+      *

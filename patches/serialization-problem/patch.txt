@@ -1,0 +1,23 @@
+### Eclipse Workspace Patch 1.0
+#P hibernate
+Index: core/src/main/java/org/hibernate/id/factory/DefaultIdentifierGeneratorFactory.java
+===================================================================
+--- core/src/main/java/org/hibernate/id/factory/DefaultIdentifierGeneratorFactory.java	(revision 15666)
++++ core/src/main/java/org/hibernate/id/factory/DefaultIdentifierGeneratorFactory.java	(working copy)
+@@ -24,6 +24,7 @@
+  */
+ package org.hibernate.id.factory;
+ 
++import java.io.Serializable;
+ import java.util.Properties;
+ 
+ import org.slf4j.Logger;
+@@ -55,7 +56,7 @@
+  *
+  * @author Steve Ebersole
+  */
+-public class DefaultIdentifierGeneratorFactory implements IdentifierGeneratorFactory {
++public class DefaultIdentifierGeneratorFactory implements IdentifierGeneratorFactory, Serializable {
+ 	private static final Logger log = LoggerFactory.getLogger( DefaultIdentifierGeneratorFactory.class );
+ 
+ 	private Dialect dialect;
